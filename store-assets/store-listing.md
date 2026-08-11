@@ -17,6 +17,8 @@ URL Flicker Tamer sits between the page and the browser's history API and
 filters out that churn:
 
 • Changes to a post, profile, or any deep URL apply instantly — always.
+• The tab title is steadied the same way — no more tab text flashing
+  between the page title and "X".
 • A sudden flip to bare x.com with no click or keypress from you is held
   briefly; if the site immediately flips back (the flicker pattern), the
   bounce is discarded and the URL bar never moves.

@@ -16,27 +16,19 @@
 // a deep URL (the flicker pattern), drop the held root change entirely. If
 // nothing follows, it was a genuine navigation home — apply it, just late.
 //
-// The hold length depends on user gesture: within GESTURE_MS of a click or
-// keypress the flip might be a deliberate "go Home", so hold only
-// GESTURE_HOLD_MS — short enough to be imperceptible on the URL bar, long
-// enough to catch a reversal, which arrives within tens of ms. Gesture-less
-// flips are pure router churn and get the full HOLD_MS. (v1.0.0 skipped the
-// hold entirely inside the gesture window, which let click-navigation
-// flicker through — e.g. clicking a post from the timeline.)
+// Every flip-to-root pays the same HOLD_MS: a genuine "go Home" only has
+// its URL bar text (never its page content) lag by the hold, which is
+// imperceptible, while a shorter gesture-window hold (tried in v1.0.1)
+// proved leaky when the reversal landed late on a janked main thread.
+//
+// The tab title gets the same treatment: hydration churns document.title
+// between the specific page title and the generic app title in lockstep
+// with the URL churn, so changes *to* the generic title are held and
+// dropped when reversed.
 (() => {
   'use strict';
 
   const HOLD_MS = 400;
-  const GESTURE_HOLD_MS = 200;
-  const GESTURE_MS = 1000;
-
-  let lastGesture = -Infinity;
-  for (const ev of ['pointerdown', 'keydown', 'touchstart']) {
-    addEventListener(ev, () => { lastGesture = performance.now(); }, {
-      capture: true,
-      passive: true,
-    });
-  }
 
   const nativePush = History.prototype.pushState;
   const nativeReplace = History.prototype.replaceState;
@@ -81,13 +73,12 @@
       }
 
       if (isBareRoot(target) && !isBareRoot(location.href)) {
-        const recentGesture = performance.now() - lastGesture < GESTURE_MS;
         pending = {
           native,
           args,
           url: target,
           state: args[0],
-          timer: setTimeout(flushPending, recentGesture ? GESTURE_HOLD_MS : HOLD_MS),
+          timer: setTimeout(flushPending, HOLD_MS),
         };
         return;
       }
@@ -113,4 +104,55 @@
   // Never let a held change die silently on back/forward or page teardown.
   addEventListener('popstate', flushPending, true);
   addEventListener('pagehide', flushPending, true);
+
+  // --- Tab title taming -----------------------------------------------------
+  // Same idea as the URL: hold changes TO the generic app title ("X",
+  // "Home / X", optionally with an unread-count "(3) " prefix) while a
+  // specific title is showing; drop the held change if a specific title
+  // follows (churn), apply it if nothing follows (genuine navigation).
+  const titleDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'title');
+  if (titleDesc?.get && titleDesc?.set) {
+    let pendingTitle = null; // { value, timer }
+
+    const isGenericTitle = (t) => {
+      const s = String(t).replace(/^\(\d+\+?\)\s*/, '').trim();
+      return s === 'X' || s === 'Home / X' || s === 'X / X';
+    };
+
+    const flushTitle = () => {
+      if (!pendingTitle) return;
+      const p = pendingTitle;
+      pendingTitle = null;
+      clearTimeout(p.timer);
+      titleDesc.set.call(document, p.value);
+    };
+
+    Object.defineProperty(Document.prototype, 'title', {
+      configurable: true,
+      enumerable: titleDesc.enumerable,
+      get() {
+        // Report the title the page thinks it set, like history.state above.
+        return pendingTitle ? pendingTitle.value : titleDesc.get.call(this);
+      },
+      set(value) {
+        if (pendingTitle) {
+          clearTimeout(pendingTitle.timer);
+          pendingTitle = null;
+          if (!isGenericTitle(value)) {
+            // Churn reversed: drop the held generic title, show the real one.
+            titleDesc.set.call(this, value);
+            return;
+          }
+        }
+        const current = titleDesc.get.call(this);
+        if (isGenericTitle(value) && current && !isGenericTitle(current)) {
+          pendingTitle = { value, timer: setTimeout(flushTitle, HOLD_MS) };
+          return;
+        }
+        titleDesc.set.call(this, value);
+      },
+    });
+
+    addEventListener('pagehide', flushTitle, true);
+  }
 })();

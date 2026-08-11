@@ -30,13 +30,15 @@ A content script runs at `document_start` in the page's main world and wraps
 `History.prototype.pushState` / `replaceState`:
 
 1. Changes to any deep URL (post, profile, …) apply immediately.
-2. A flip to bare `/` or `/home` is held briefly — 200ms if it follows a
-   user gesture within 1s (it might be a deliberate "go Home"), 400ms if
-   gesture-less (pure router churn):
+2. A flip to bare `/` or `/home` is held for 400ms:
    - if the next call goes back to a deep URL (the flicker pattern),
      the held flip is dropped — the URL bar never moves;
    - if nothing follows, it applies late (a genuine navigation home; the
      brief URL bar lag is imperceptible since page content isn't delayed).
+3. The tab title gets the same treatment: `document.title` changes to the
+   generic app title ("X", "Home / X") while a specific title is showing
+   are held and dropped if a specific title follows — this kills the
+   matching tab-text flicker.
 
 Safety nets: while a change is held, `history.state` reports the state the
 page thinks it set; held changes are force-flushed on `popstate`/`pagehide`.
@@ -48,8 +50,8 @@ Runs only on `x.com` and `twitter.com`.
 
 ## Development
 
-Load unpacked via `chrome://extensions` (Developer mode). Tunables at the
-top of `tamer.js`: `HOLD_MS` (hold window) and `GESTURE_MS` (how recent a
-gesture must be to count as deliberate).
+Load unpacked via `chrome://extensions` (Developer mode). The one tunable
+at the top of `tamer.js` is `HOLD_MS` (how long a suspicious change is held
+while waiting for the reversal that marks it as churn).
 
 Not affiliated with X Corp.
