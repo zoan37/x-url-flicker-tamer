@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- steady URL bar motif: address pill locked steady on an accent field -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3730a3"/>
+      <stop offset="1" stop-color="#6d28d9"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+  <!-- URL bar pill -->
+  <rect x="18" y="46" width="92" height="36" rx="18" fill="#ffffff"/>
+  <!-- padlock-ish steady dot -->
+  <circle cx="38" cy="64" r="7" fill="#16a34a"/>
+  <!-- steady URL line -->
+  <rect x="52" y="60" width="46" height="8" rx="4" fill="#312e81"/>
+</svg>

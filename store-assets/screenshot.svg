@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800" font-family="DejaVu Sans, sans-serif">
+  <rect width="1280" height="800" fill="#f8fafc"/>
+  <text x="640" y="90" text-anchor="middle" font-size="44" font-weight="bold" fill="#0f172a">Keep the URL bar steady on x.com</text>
+  <text x="640" y="140" text-anchor="middle" font-size="24" fill="#475569">Stops the address bar ping-ponging between a post URL and x.com while the page loads</text>
+
+  <!-- BEFORE panel -->
+  <text x="120" y="230" font-size="26" font-weight="bold" fill="#b91c1c">WITHOUT</text>
+  <g>
+    <rect x="120" y="250" width="1040" height="56" rx="28" fill="#ffffff" stroke="#e2e8f0" stroke-width="2"/>
+    <circle cx="152" cy="278" r="9" fill="#94a3b8"/>
+    <text x="175" y="287" font-size="24" fill="#334155">x.com/dedene/status/2087154363798012060</text>
+  </g>
+  <g opacity="0.75">
+    <rect x="120" y="318" width="1040" height="56" rx="28" fill="#ffffff" stroke="#fca5a5" stroke-width="2"/>
+    <circle cx="152" cy="346" r="9" fill="#ef4444"/>
+    <text x="175" y="355" font-size="24" fill="#b91c1c">x.com</text>
+    <text x="1140" y="355" text-anchor="end" font-size="22" fill="#ef4444">flicker</text>
+  </g>
+  <g opacity="0.75">
+    <rect x="120" y="386" width="1040" height="56" rx="28" fill="#ffffff" stroke="#fca5a5" stroke-width="2"/>
+    <circle cx="152" cy="414" r="9" fill="#ef4444"/>
+    <text x="175" y="423" font-size="24" fill="#b91c1c">x.com  ⇄  x.com/dedene/status/2087…</text>
+    <text x="1140" y="423" text-anchor="end" font-size="22" fill="#ef4444">flicker</text>
+  </g>
+
+  <!-- AFTER panel -->
+  <text x="120" y="540" font-size="26" font-weight="bold" fill="#15803d">WITH URL FLICKER TAMER</text>
+  <g>
+    <rect x="120" y="560" width="1040" height="56" rx="28" fill="#ffffff" stroke="#86efac" stroke-width="3"/>
+    <circle cx="152" cy="588" r="9" fill="#16a34a"/>
+    <text x="175" y="597" font-size="24" fill="#334155">x.com/dedene/status/2087154363798012060</text>
+    <text x="1140" y="597" text-anchor="end" font-size="22" fill="#16a34a">steady</text>
+  </g>
+
+  <text x="120" y="690" font-size="22" fill="#475569">• Runs only on x.com and twitter.com   • No data collected, nothing leaves your browser</text>
+  <text x="120" y="726" font-size="22" fill="#475569">• Deliberate navigation is never delayed — only the loader's URL churn is filtered out</text>
+</svg>
