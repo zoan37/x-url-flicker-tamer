@@ -20,8 +20,9 @@ filters out that churn:
 • A sudden flip to bare x.com with no click or keypress from you is held
   briefly; if the site immediately flips back (the flicker pattern), the
   bounce is discarded and the URL bar never moves.
-• Anything you do deliberately — clicking Home, keyboard shortcuts — is
-  detected via your input and applies with zero delay.
+• Navigation is never blocked: deliberate moves (clicking Home, keyboard
+  shortcuts) show in the URL bar within a fraction of a second, and page
+  content is never delayed at all.
 
 Why this exists: this was built to fix the flicker as seen in Google Chrome
 on Omarchy (Arch Linux + Hyprland, Wayland). The flicker shows up wherever

@@ -33,5 +33,5 @@
   </g>
 
   <text x="120" y="690" font-size="22" fill="#475569">• Runs only on x.com and twitter.com   • No data collected, nothing leaves your browser</text>
-  <text x="120" y="726" font-size="22" fill="#475569">• Deliberate navigation is never delayed — only the loader's URL churn is filtered out</text>
+  <text x="120" y="726" font-size="22" fill="#475569">• Navigation is never blocked — the URL bar just skips the site's loading churn</text>
 </svg>

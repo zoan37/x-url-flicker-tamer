@@ -30,12 +30,13 @@ A content script runs at `document_start` in the page's main world and wraps
 `History.prototype.pushState` / `replaceState`:
 
 1. Changes to any deep URL (post, profile, …) apply immediately.
-2. A flip to bare `/` or `/home` within 1s of a user gesture (click,
-   keypress, touch) is treated as deliberate and applies immediately.
-3. A gesture-less flip to bare `/` or `/home` is held for 400ms:
+2. A flip to bare `/` or `/home` is held briefly — 200ms if it follows a
+   user gesture within 1s (it might be a deliberate "go Home"), 400ms if
+   gesture-less (pure router churn):
    - if the next call goes back to a deep URL (the flicker pattern),
      the held flip is dropped — the URL bar never moves;
-   - if nothing follows, it applies late (a genuine programmatic redirect).
+   - if nothing follows, it applies late (a genuine navigation home; the
+     brief URL bar lag is imperceptible since page content isn't delayed).
 
 Safety nets: while a change is held, `history.state` reports the state the
 page thinks it set; held changes are force-flushed on `popstate`/`pagehide`.

@@ -12,19 +12,22 @@
 // that reads as flicker.
 //
 // Strategy: when the router flips the URL to "/" or "/home" while we're on a
-// deeper path AND the user hasn't interacted recently, hold that change for
-// HOLD_MS. If the very next call goes back to a deep URL (the flicker
-// pattern), drop the held root change entirely. If nothing follows, it was a
-// genuine programmatic navigation home — apply it, just HOLD_MS late.
+// deeper path, hold that change briefly. If the very next call goes back to
+// a deep URL (the flicker pattern), drop the held root change entirely. If
+// nothing follows, it was a genuine navigation home — apply it, just late.
 //
-// Deliberate navigations (clicking Home, keyboard shortcuts) always follow a
-// user gesture within milliseconds, so anything within GESTURE_MS of a
-// pointer/key event passes through with zero delay. Hydration churn fires
-// with no gesture anywhere near it, so only it pays the hold.
+// The hold length depends on user gesture: within GESTURE_MS of a click or
+// keypress the flip might be a deliberate "go Home", so hold only
+// GESTURE_HOLD_MS — short enough to be imperceptible on the URL bar, long
+// enough to catch a reversal, which arrives within tens of ms. Gesture-less
+// flips are pure router churn and get the full HOLD_MS. (v1.0.0 skipped the
+// hold entirely inside the gesture window, which let click-navigation
+// flicker through — e.g. clicking a post from the timeline.)
 (() => {
   'use strict';
 
   const HOLD_MS = 400;
+  const GESTURE_HOLD_MS = 200;
   const GESTURE_MS = 1000;
 
   let lastGesture = -Infinity;
@@ -77,14 +80,14 @@
         pending = null;
       }
 
-      const recentGesture = performance.now() - lastGesture < GESTURE_MS;
-      if (isBareRoot(target) && !isBareRoot(location.href) && !recentGesture) {
+      if (isBareRoot(target) && !isBareRoot(location.href)) {
+        const recentGesture = performance.now() - lastGesture < GESTURE_MS;
         pending = {
           native,
           args,
           url: target,
           state: args[0],
-          timer: setTimeout(flushPending, HOLD_MS),
+          timer: setTimeout(flushPending, recentGesture ? GESTURE_HOLD_MS : HOLD_MS),
         };
         return;
       }
