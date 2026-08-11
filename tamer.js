@@ -1,4 +1,10 @@
-// X URL Flicker Tamer
+// URL Flicker Tamer for X
+//
+// Originally built to fix URL bar flicker in Google Chrome on Omarchy
+// (Arch Linux + Hyprland, Wayland), where opening an x.com post bounced the
+// address bar between the post URL and bare x.com. The cause is site-side
+// and timing-dependent, so this applies to any machine slow enough to paint
+// the intermediate states.
 //
 // x.com's router calls history.replaceState/pushState repeatedly during app
 // hydration, bouncing the URL bar between the post URL and bare x.com. On a

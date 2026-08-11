@@ -6,6 +6,24 @@ while x.com loads. The site's own router calls
 machines where hydration is slow enough to paint the intermediate states,
 the URL bar visibly ping-pongs. This extension filters out that churn.
 
+## Motivation
+
+This was built to fix a flicker observed running **Google Chrome on
+[Omarchy](https://omarchy.org/)** (Arch Linux + Hyprland, Wayland): opening
+an x.com post — e.g. `x.com/<user>/status/<id>` — made the URL bar bounce
+between the post URL and bare `x.com` several times before settling. The
+same setup on macOS didn't show it.
+
+The root cause isn't Omarchy, Linux, or Chrome — a clean profile shows
+x.com's router firing the same `replaceState` sequence everywhere. It's a
+visibility race: the intermediate URL states only get painted when the
+page's JavaScript hydration is slow enough (slower single-core CPU, Linux
+rendering path, extensions injecting into the page). Faster machines finish
+the dance before the address bar repaints, so users never see it. So if
+you're seeing URL bar flicker on x.com on any slower or Linux machine —
+Omarchy, other Arch/Hyprland setups, or anything else — this extension is
+the workaround: it intercepts the churn before the URL bar ever moves.
+
 ## How it works
 
 A content script runs at `document_start` in the page's main world and wraps

@@ -23,6 +23,14 @@ filters out that churn:
 • Anything you do deliberately — clicking Home, keyboard shortcuts — is
   detected via your input and applies with zero delay.
 
+Why this exists: this was built to fix the flicker as seen in Google Chrome
+on Omarchy (Arch Linux + Hyprland, Wayland). The flicker shows up wherever
+the page loads slowly enough for the intermediate URL changes to be painted
+— slower machines, Linux desktops, or profiles with many extensions — while
+faster machines (e.g. Apple Silicon Macs) hide it. If your address bar
+bounces between a post URL and x.com on Linux or any slower machine, this
+is the fix.
+
 Notes:
 • Runs only on x.com and twitter.com. No other sites are touched.
 • Collects nothing. No analytics, no network requests, no storage. The
