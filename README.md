@@ -27,21 +27,46 @@ the workaround: it intercepts the churn before the URL bar ever moves.
 ## How it works
 
 A content script runs at `document_start` in the page's main world and wraps
-`History.prototype.pushState` / `replaceState`:
+`History.prototype.pushState` / `replaceState`, applying two layers.
 
-1. Changes to any deep URL (post, profile, …) apply immediately.
-2. A flip to bare `/` or `/home` is held for 400ms:
+**Layer 1 — ping-pong rule.** Catches the visible URL bar bounce:
+
+1. A flip to bare `/` or `/home` is held for 400ms:
    - if the next call goes back to a deep URL (the flicker pattern),
      the held flip is dropped — the URL bar never moves;
    - if nothing follows, it applies late (a genuine navigation home; the
      brief URL bar lag is imperceptible since page content isn't delayed).
-3. The tab title gets the same treatment: `document.title` changes to the
+2. The tab title gets the same treatment: `document.title` changes to the
    generic app title ("X", "Home / X") while a specific title is showing
    are held and dropped if a specific title follows — this kills the
    matching tab-text flicker.
 
-Safety nets: while a change is held, `history.state` reports the state the
-page thinks it set; held changes are force-flushed on `popstate`/`pagehide`.
+**Layer 2 — burst coalescing.** Every remaining `replaceState` (and title
+write) is debounced by 150ms, so a rapid volley collapses into a single
+native call once it goes quiet, with a 500ms ceiling so a router that never
+stops churning still makes progress rather than starving.
+
+`pushState` is deliberately exempt from layer 2 — each call creates a
+session-history entry, so coalescing or reordering them would cost the back
+button its stops. A `pushState` flushes any held `replaceState` first, then
+applies immediately, preserving the original order.
+
+### Why layer 2 exists
+
+Layer 1 fixed what you could see in the URL bar, but each native history or
+title call also fires `chrome.tabs.onUpdated` in *every* installed extension,
+and extensions routinely respond by re-setting their toolbar icon or badge. A
+hydration volley therefore made the whole Chrome toolbar icon row repaint in
+lockstep — flicker in a completely unrelated part of the browser, from the
+same root cause. Cutting the event storm at the source fixes it without
+touching anyone else's extension.
+
+Measured on a replayed hydration volley, layer 2 takes the native calls from
+3 → 1 (history) and 2 → 1 (title); on a sustained 40-call storm, 40 → 4.
+
+Safety nets: while a change is held, `history.state` and `document.title`
+report what the page thinks it set; held changes are force-flushed on
+`popstate`/`pagehide`.
 
 ## Privacy
 
@@ -50,8 +75,12 @@ Runs only on `x.com` and `twitter.com`.
 
 ## Development
 
-Load unpacked via `chrome://extensions` (Developer mode). The one tunable
-at the top of `tamer.js` is `HOLD_MS` (how long a suspicious change is held
-while waiting for the reversal that marks it as churn).
+Load unpacked via `chrome://extensions` (Developer mode). The tunables at the
+top of `tamer.js`:
+
+- `HOLD_MS` (400) — how long a flip-to-root is held while waiting for the
+  reversal that marks it as churn.
+- `QUIET_MS` (150) — silence that marks the end of a burst.
+- `MAX_HOLD_MS` (500) — ceiling, so a sustained volley still commits.
 
 Not affiliated with X Corp.
