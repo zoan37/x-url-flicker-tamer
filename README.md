@@ -29,7 +29,7 @@ the workaround: it intercepts the churn before the URL bar ever moves.
 ## How it works
 
 A content script runs at `document_start` in the page's main world and wraps
-`History.prototype.pushState` / `replaceState`, applying two layers.
+`History.prototype.pushState` / `replaceState`, applying three layers.
 
 **Layer 1 — ping-pong rule.** Catches the visible URL bar bounce:
 
@@ -63,12 +63,61 @@ lockstep — flicker in a completely unrelated part of the browser, from the
 same root cause. Cutting the event storm at the source fixes it without
 touching anyone else's extension.
 
-Measured on a replayed hydration volley, layer 2 takes the native calls from
-3 → 1 (history) and 2 → 1 (title); on a sustained 40-call storm, 40 → 4.
+**Layer 3 — settling window.** Layers 1 and 2 left a narrower version of the
+original flicker on slow machines, for two reasons that compound:
+
+- layer 1 only recognises flips to bare root, so any *other* URL the router
+  passes through on the way (canonicalisation, `/i/flow/…`, the previous
+  page's URL) was never held;
+- layer 2 only collapses calls spaced closer than `QUIET_MS` — but the slower
+  the machine, the further apart the churn lands, so exactly the machines that
+  paint the intermediate states are the ones whose churn outruns the debounce.
+
+Both holes close by widening the question: for a short window after a
+navigation, *any* unattended URL or title change is suspect, not just a flip to
+root, and the debounce stretches to match the churn's real spacing. The window
+opens on a navigation (initial load, `pushState`, `popstate`), extends while
+churn keeps arriving, and closes 1.5s after it stops — so an idle page is back
+to the tight timings above.
+
+Changes made from inside a user gesture's own task are exempt and apply
+immediately, so clicking a post feels instant. (`navigator.userActivation` is
+the wrong signal here — it stays active for seconds, which is precisely the
+span the churn happens in, so it would exempt the churn along with the click.)
+Flips to root stay held even during a gesture: exempting them leaked in v1.0.1,
+because the reversal that identifies the flicker can land arbitrarily late on a
+janked main thread.
+
+In every layer, a held change is only dropped when another change supersedes
+it — a change nobody contradicts always lands. What a hold costs is URL bar
+*text* lag; page content is never blocked by it.
+
+### Measurements
+
+`node test/replay.mjs [path/to/tamer.js]` replays captured hydration churn
+against a fake `History`/`Document` on a virtual clock and counts what a user
+can actually see: native history calls that move the URL bar, and native title
+writes (both also stand in for the `tabs.onUpdated` events every other
+installed extension receives). Point it at an older `tamer.js` to compare.
+
+| replayed pattern | v1.1.0 | v1.2.0 |
+| --- | --- | --- |
+| tight volley, 40ms apart | 0 URL bar moves | 0 |
+| slow volley, 250ms apart, non-root intermediates | **3 moves** | **0** |
+| sustained storm, 40 calls | 2 moves, 20 native calls | 0 moves, 1 native call |
+| spaced title churn | 2 native title writes | 1 |
 
 Safety nets: while a change is held, `history.state` and `document.title`
 report what the page thinks it set; held changes are force-flushed on
-`popstate`/`pagehide`.
+`popstate`/`pagehide`; a held `pushState` that gets superseded is committed
+rather than dropped, so the back button keeps its stops.
+
+### Debugging a leak
+
+Set `localStorage['uft-debug'] = '1'` on x.com and reload. Every interception,
+hold, drop and native commit is logged to the console with a timestamp, so a
+flicker that still gets through can be traced to the exact call that moved the
+URL bar.
 
 ## Privacy
 
@@ -86,5 +135,14 @@ tunables at the top of `tamer.js`:
   reversal that marks it as churn.
 - `QUIET_MS` (150) — silence that marks the end of a burst.
 - `MAX_HOLD_MS` (500) — ceiling, so a sustained volley still commits.
+
+Those apply to an idle page. While the app is settling after a navigation the
+same three widen to `SETTLE_HOLD_MS` (600), `SETTLE_QUIET_MS` (350) and
+`SETTLE_MAX_HOLD_MS` (1200), for `SETTLE_MS` (6000) after the navigation,
+extended while churn keeps arriving and closed `SETTLE_EXTEND_MS` (1500) after
+it stops. If flicker still gets through on a slower machine, `SETTLE_QUIET_MS`
+is the one to raise — it has to exceed the spacing of that machine's churn.
+
+Run `node test/replay.mjs` after changing any of them.
 
 Not affiliated with X Corp.

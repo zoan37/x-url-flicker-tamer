@@ -75,7 +75,7 @@ public repo and linking it never hurts.)
 
 ## Upload
 
-- ZIP: dist/url-flicker-tamer-1.1.0.zip (contains manifest.json, tamer.js,
+- ZIP: dist/url-flicker-tamer-1.2.0.zip (contains manifest.json, tamer.js,
   icons/ — store assets and docs are excluded on purpose)
 - Console: https://chrome.google.com/webstore/devconsole
   One-time $5 developer registration fee on first use.

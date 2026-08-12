@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "URL Flicker Tamer for X",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Stops the address bar, tab title and toolbar icons flickering while x.com loads. Runs only on x.com; collects no data.",
   "icons": {
     "16": "icons/icon16.png",
