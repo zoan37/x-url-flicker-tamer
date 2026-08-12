@@ -79,5 +79,8 @@ public repo and linking it never hurts.)
   icons/ — store assets and docs are excluded on purpose)
 - Console: https://chrome.google.com/webstore/devconsole
   One-time $5 developer registration fee on first use.
+- Published listing:
+  https://chromewebstore.google.com/detail/url-flicker-tamer-for-x/dfemkbbkdllddebdecaagfhdcmagiifp
+  (extension ID: dfemkbbkdllddebdecaagfhdcmagiifp)
 - Review usually takes 1–3 days; content-script-only extensions with no
   broad host permissions tend to pass quickly.

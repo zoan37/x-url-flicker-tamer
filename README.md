@@ -1,5 +1,7 @@
 # URL Flicker Tamer for X
 
+[**Install from the Chrome Web Store**](https://chromewebstore.google.com/detail/url-flicker-tamer-for-x/dfemkbbkdllddebdecaagfhdcmagiifp)
+
 Stops the Chrome address bar flickering between a post URL and bare `x.com`
 while x.com loads. The site's own router calls
 `history.replaceState`/`pushState` repeatedly during app hydration; on
@@ -75,8 +77,10 @@ Runs only on `x.com` and `twitter.com`.
 
 ## Development
 
-Load unpacked via `chrome://extensions` (Developer mode). The tunables at the
-top of `tamer.js`:
+For the published build, see the [Chrome Web Store
+listing](https://chromewebstore.google.com/detail/url-flicker-tamer-for-x/dfemkbbkdllddebdecaagfhdcmagiifp).
+To work on it, load unpacked via `chrome://extensions` (Developer mode). The
+tunables at the top of `tamer.js`:
 
 - `HOLD_MS` (400) — how long a flip-to-root is held while waiting for the
   reversal that marks it as churn.
