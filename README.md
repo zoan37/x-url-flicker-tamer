@@ -80,6 +80,25 @@ opens on a navigation (initial load, `pushState`, `popstate`), extends while
 churn keeps arriving, and closes 1.5s after it stops — so an idle page is back
 to the tight timings above.
 
+**Layer 4 — idle churn detection.** Layer 3's window opens only on a
+navigation, but churn also arrives on a page that settled minutes ago: the
+[repro case](test/repro-cases.md) is URL bar flicker while simply reading an
+already-open post. Nothing about that churn is different — only the window had
+closed, so it fell back to the tight timings and layer 1's root-flip-only rule
+and walked straight through.
+
+Two unattended changes landing within `SETTLE_QUIET_MS` of each other are
+themselves the evidence that the app has started churning again, so the second
+reopens the settling window and layers 1–3 take the rest of the burst. Because
+the *first* change of a burst is judged before any such evidence exists, an
+unattended change is also coalesced on the churn timescale rather than the idle
+one — otherwise it commits before the reversal that would identify it. The cost
+is that a lone unattended change (a redirect, a canonicalisation) lands in
+350ms rather than 150ms; changes from a user gesture's own task keep the tight
+timing. Title writes that land back on the title already displayed are now
+dropped outright rather than coalesced: invisible to the user, but each one
+still fired `tabs.onUpdated` everywhere.
+
 Changes made from inside a user gesture's own task are exempt and apply
 immediately, so clicking a post feels instant. (`navigator.userActivation` is
 the wrong signal here — it stays active for seconds, which is precisely the
@@ -100,12 +119,18 @@ can actually see: native history calls that move the URL bar, and native title
 writes (both also stand in for the `tabs.onUpdated` events every other
 installed extension receives). Point it at an older `tamer.js` to compare.
 
-| replayed pattern | v1.1.0 | v1.2.0 |
-| --- | --- | --- |
-| tight volley, 40ms apart | 0 URL bar moves | 0 |
-| slow volley, 250ms apart, non-root intermediates | **3 moves** | **0** |
-| sustained storm, 40 calls | 2 moves, 20 native calls | 0 moves, 1 native call |
-| spaced title churn | 2 native title writes | 1 |
+| replayed pattern | v1.1.0 | v1.2.0 | v1.3.0 |
+| --- | --- | --- | --- |
+| tight volley, 40ms apart | 0 URL bar moves | 0 | 0 |
+| slow volley, 250ms apart, non-root intermediates | **3 moves** | **0** | 0 |
+| sustained storm, 40 calls | 2 moves, 20 native calls | 0 moves, 1 native call | 0, 1 |
+| spaced title churn | 2 native title writes | 1 | 1 |
+| churn on a long-idle page, 250ms apart | — | **4 moves** | **0** |
+| title churn on a long-idle page | — | **2 writes** | **0** |
+
+The last two rows are the [v1.3 repro case](test/repro-cases.md). Point the
+harness at an older `tamer.js` to reproduce the comparison:
+`node test/replay.mjs /path/to/old/tamer.js`.
 
 Safety nets: while a change is held, `history.state` and `document.title`
 report what the page thinks it set; held changes are force-flushed on
@@ -114,10 +139,21 @@ rather than dropped, so the back button keeps its stops.
 
 ### Debugging a leak
 
-Set `localStorage['uft-debug'] = '1'` on x.com and reload. Every interception,
-hold, drop and native commit is logged to the console with a timestamp, so a
-flicker that still gets through can be traced to the exact call that moved the
-URL bar.
+The last ~400 decisions are always kept in memory, so flicker that has already
+happened can still be examined — no reload, which is the point: reloading
+destroys the evidence, and this kind of flicker rarely repeats on demand. In
+the console on x.com:
+
+```js
+__uft.dump()    // every interception, hold, drop and native commit, timestamped
+__uft.state()   // is the settling window open right now, and what is held?
+```
+
+For a live trace instead, set `localStorage['uft-debug'] = '1'` and reload;
+the same records are then also printed to the console as they happen.
+
+The buffer holds URLs and titles from the page you are already looking at. It
+is never persisted and never leaves the tab.
 
 ## Privacy
 
@@ -140,8 +176,18 @@ Those apply to an idle page. While the app is settling after a navigation the
 same three widen to `SETTLE_HOLD_MS` (600), `SETTLE_QUIET_MS` (350) and
 `SETTLE_MAX_HOLD_MS` (1200), for `SETTLE_MS` (6000) after the navigation,
 extended while churn keeps arriving and closed `SETTLE_EXTEND_MS` (1500) after
-it stops. If flicker still gets through on a slower machine, `SETTLE_QUIET_MS`
-is the one to raise — it has to exceed the spacing of that machine's churn.
+it stops. `SETTLE_QUIET_MS` doubles as the churn threshold for layer 4: two
+unattended changes closer together than this reopen the window, and an
+unattended change is coalesced on it rather than on `QUIET_MS`.
+
+If flicker still gets through on a slower machine, `SETTLE_QUIET_MS` is the one
+to raise — it has to exceed the spacing of that machine's churn. Raising it also
+lengthens how long a lone unattended change waits before it lands, which is the
+one thing to watch when tuning it.
+
+New flicker sightings go in [`test/repro-cases.md`](test/repro-cases.md) with a
+matching scenario in the replay harness — the ones worth keeping are
+intermittent, and the details stop being recoverable within a day.
 
 Run `node test/replay.mjs` after changing any of them.
 

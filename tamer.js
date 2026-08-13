@@ -43,6 +43,21 @@
 //      arriving, and closes shortly after it stops, so an idle page is back to
 //      the tight v1.1 timings.
 //
+//   4. Idle churn detection (v1.3): layer 3 only opens its window on a
+//      navigation, but churn also arrives on a page that settled minutes ago —
+//      see test/repro-cases.md, where flicker showed up while merely reading an
+//      already-loaded post. Nothing about that churn is different; only our
+//      window had closed, so it fell back to the tight timings and layer 1's
+//      root-flip-only rule, and walked straight through. Two unattended changes
+//      landing within SETTLE_QUIET_MS of each other are themselves the evidence
+//      that the app is churning again, so the second one reopens the settling
+//      window and layers 1-3 take the rest of the burst. The change that
+//      *starts* the burst is judged before that evidence exists, so it can only
+//      be caught by giving unattended changes the wider coalescing quiet up
+//      front — which costs a lone redirect 350ms of URL bar text lag instead of
+//      150ms, and is what takes the repro case from flicking out and back to
+//      not moving at all.
+//
 // Nothing is ever dropped unless another change supersedes it, in any layer —
 // a held change that nobody contradicts always lands. The cost of a hold is
 // URL bar *text* lag; page content is never blocked by it.
@@ -60,6 +75,11 @@
 // Debugging: set localStorage['uft-debug'] = '1' on x.com and reload. Every
 // interception, hold, drop and native commit is logged to the console with a
 // timestamp, so a leak can be traced to the exact call that moved the URL bar.
+// The same records are always kept in a small in-memory ring buffer, printable
+// with __uft.dump() — flicker like the repro case above is intermittent and
+// gone by the time you think to turn logging on, and a reload destroys the
+// evidence. The buffer holds URLs and titles from the page you are already
+// looking at, is never persisted and never leaves the tab.
 (() => {
   'use strict';
 
@@ -82,9 +102,19 @@
   } catch {
     // Storage can be blocked; debug logging is never worth throwing over.
   }
-  const log = DEBUG
-    ? (...args) => console.debug('[uft]', `${performance.now().toFixed(0)}ms`, ...args)
-    : () => {};
+  // The ring buffer runs whether or not DEBUG is set. Flicker of the kind in
+  // test/repro-cases.md is intermittent, unreproducible on demand and gone by
+  // the time you think to turn logging on — and turning it on costs a reload,
+  // which destroys the evidence. This keeps the last few hundred decisions
+  // recoverable after the fact via __uft.dump().
+  const RING = 400;
+  const ring = [];
+  const log = (...args) => {
+    const line = `${performance.now().toFixed(0)}ms ${args.join(' ')}`;
+    ring.push(line);
+    if (ring.length > RING) ring.shift();
+    if (DEBUG) console.debug('[uft]', line);
+  };
 
   // --- settling window ------------------------------------------------------
   // Open at document_start (the initial load is itself a navigation), reopened
@@ -94,12 +124,40 @@
 
   let settleUntil = performance.now() + SETTLE_MS;
   const settling = () => performance.now() < settleUntil;
-  const openSettling = () => {
-    settleUntil = Math.max(settleUntil, performance.now() + SETTLE_MS);
+  const openSettling = (ms = SETTLE_MS) => {
+    settleUntil = Math.max(settleUntil, performance.now() + ms);
   };
   const extendSettling = () => {
     if (settling()) settleUntil = performance.now() + SETTLE_EXTEND_MS;
   };
+
+  // --- idle churn detection -------------------------------------------------
+  // Shared by the URL and title paths, because the two churn in lockstep and
+  // either one is equally good evidence that the app has started churning
+  // again. Reopens only the short window: a burst that keeps going extends it
+  // like any other, and one that stops leaves the page idle again quickly.
+
+  let lastUnattended = -Infinity;
+  const noteUnattended = () => {
+    const now = performance.now();
+    const churning = now - lastUnattended < SETTLE_QUIET_MS;
+    lastUnattended = now;
+    if (churning && !settling()) {
+      log('churn on an idle page → reopening settling window');
+      openSettling(SETTLE_EXTEND_MS);
+    }
+  };
+
+  // Detection alone is not enough: the change that *starts* an idle burst is
+  // judged before there is any evidence, so it goes to the coalescer, and on
+  // the old 150ms quiet it committed before the reversal that identifies it as
+  // churn could arrive. An unattended change is therefore coalesced on the
+  // churn timescale rather than the idle one, which is the whole difference
+  // between the burst in test/repro-cases.md flicking the URL bar out and back
+  // and never moving it at all. What it costs is that a lone unattended change
+  // — a redirect, a canonicalisation — lands in SETTLE_QUIET_MS instead of
+  // QUIET_MS. Changes made from a gesture's own task keep the tight timing.
+  const churnQuietMs = () => (inGestureTask ? quietMs() : Math.max(quietMs(), SETTLE_QUIET_MS));
 
   const holdMs = () => (settling() ? SETTLE_HOLD_MS : HOLD_MS);
   const quietMs = () => (settling() ? SETTLE_QUIET_MS : QUIET_MS);
@@ -145,17 +203,28 @@
       apply(h.payload);
     };
 
-    const schedule = (payload) => {
+    const schedule = (payload, quiet = quietMs()) => {
       const now = performance.now();
       if (held) clearTimeout(held.timer);
       else held = { payload: null, timer: null, deadline: now + maxHoldMs() };
       held.payload = payload;
-      held.timer = setTimeout(flush, Math.max(0, Math.min(quietMs(), held.deadline - now)));
+      held.timer = setTimeout(flush, Math.max(0, Math.min(quiet, held.deadline - now)));
+    };
+
+    // Only ever called when a newer change supersedes what is held. Both users
+    // of this coalescer hold replace-semantics changes — a replaceState on the
+    // current entry, or a title write — so the newest is the only one that
+    // matters and the superseded one costs nothing to discard.
+    const drop = () => {
+      if (!held) return;
+      clearTimeout(held.timer);
+      held = null;
     };
 
     return {
       schedule,
       flush,
+      drop,
       peek: () => (held ? held.payload : undefined),
       isHeld: () => held !== null,
     };
@@ -231,10 +300,19 @@
       // Compared against location.href — the URL actually on display — not
       // against anything held, which is exactly the question these rules ask.
       const displayed = location.href;
+      const moves = target !== displayed;
+      if (moves && !inGestureTask) noteUnattended();
       const rootFlip = isBareRoot(target) && !isBareRoot(displayed);
-      const suspect = target !== displayed && (rootFlip || (settling() && !inGestureTask));
+      const suspect = moves && (rootFlip || (settling() && !inGestureTask));
 
       if (suspect) {
+        if (replaces.isHeld()) {
+          // A coalesced replace is superseded by this change, exactly as a held
+          // one would be — except for a push, which needs the earlier replace to
+          // land first or the entry it was rewriting keeps its stale URL.
+          if (isPush) replaces.flush();
+          else replaces.drop();
+        }
         extendSettling();
         log('hold', isPush ? 'push' : 'replace', '→', target, rootFlip ? '(root flip)' : '(settling)');
         pending = {
@@ -260,7 +338,7 @@
       }
 
       extendSettling();
-      return replaces.schedule(args);
+      return replaces.schedule(args, churnQuietMs());
     };
 
   History.prototype.pushState = wrap(nativePush, true);
@@ -340,6 +418,7 @@
       set(value) {
         if (pendingTitle) {
           // Superseded; the replacement is judged on its own merits below.
+          log('drop held title →', pendingTitle.value);
           clearTimeout(pendingTitle.timer);
           pendingTitle = null;
         }
@@ -347,20 +426,52 @@
         // Compared against the displayed title, for the same reason the URL
         // rules compare against location.href.
         const current = titleDesc.get.call(this);
+        const moves = String(value) !== String(current);
+        // Churn frequently lands back on the title already displayed. Writing
+        // it again changes nothing a user can see but still fires
+        // tabs.onUpdated in every installed extension, so it is dropped here
+        // rather than coalesced.
+        if (!moves) {
+          titles.drop();
+          return;
+        }
+        if (!inGestureTask) noteUnattended();
         const generic = isGenericTitle(value) && current && !isGenericTitle(current);
-        const suspect =
-          String(value) !== String(current) && (generic || (settling() && !inGestureTask));
+        const suspect = generic || (settling() && !inGestureTask);
 
         if (suspect) {
+          titles.drop(); // superseded, same as the URL path
           extendSettling();
+          log('hold title →', value, generic ? '(generic)' : '(settling)');
           pendingTitle = { value, timer: setTimeout(flushTitle, holdMs()) };
           return;
         }
-        titles.schedule(value);
+        titles.schedule(value, churnQuietMs());
       },
     });
 
     addEventListener('popstate', flushAllTitles, true);
     addEventListener('pagehide', flushAllTitles, true);
+  }
+
+  // --- after-the-fact inspection --------------------------------------------
+  // Catching intermittent flicker means being able to ask what happened just
+  // now, without a reload. dump() prints the ring buffer; state() answers the
+  // question that decides everything else — was the settling window open?
+  try {
+    window.__uft = {
+      dump: () => {
+        console.log(ring.join('\n'));
+        return ring.length;
+      },
+      records: () => ring.slice(),
+      state: () => ({
+        settling: settling(),
+        settlesInMs: Math.max(0, Math.round(settleUntil - performance.now())),
+        heldUrl: pending ? pending.args[2] : null,
+      }),
+    };
+  } catch {
+    // A frozen or guarded window is not worth throwing over.
   }
 })();

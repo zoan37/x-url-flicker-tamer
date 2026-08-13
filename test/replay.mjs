@@ -306,10 +306,29 @@ scenario('pushState superseded by a different URL → still commits (back stops 
 });
 
 // 9. Long after load, the page is idle: a lone change must not be held long.
-scenario('idle page → lone replaceState lands within 200ms', () => {
+//    v1.3 relaxed this from 200ms to 400ms — an unattended change is coalesced
+//    on the churn timescale (SETTLE_QUIET_MS) so that the first change of an
+//    idle burst can still be superseded by its reversal. See scenario 9b for
+//    the tight path, which is the one a user's own action takes.
+scenario('idle page → lone unattended replaceState lands within 400ms', () => {
   const env = load(POST);
   env.advance(30000);
   const t0 = env.at();
+  env.history.replaceState({ z: 1 }, '', 'https://x.com/someone/status/999');
+  env.advance(400);
+  return {
+    ok: env.location.href === 'https://x.com/someone/status/999',
+    detail: `landed ${(env.urlMoves.at(-1)?.at ?? NaN) - t0}ms after the call`,
+  };
+});
+
+// 9b. A change from inside a user gesture's own task keeps the tight timing.
+scenario('idle page → gesture-driven replaceState lands within 200ms', () => {
+  const env = load(POST);
+  env.advance(30000);
+  const t0 = env.at();
+  env.dispatch('pointerdown');
+  env.dispatch('click');
   env.history.replaceState({ z: 1 }, '', 'https://x.com/someone/status/999');
   env.advance(200);
   return {
@@ -359,6 +378,71 @@ scenario('idle page → title change lands', () => {
   return {
     ok: env.document.title === '(3) Someone on X: "hi" / X',
     detail: `final "${env.document.title}"`,
+  };
+});
+
+// 13. THE v1.3 CASE (see test/repro-cases.md): the page loaded minutes ago and
+//     has long since settled, then the app starts churning again — flicker
+//     while merely reading a post. Layer 3's window is closed by then, so
+//     before v1.3 every non-root intermediate walked straight through.
+scenario('churn on a long-idle page (250ms apart) → at most 1 visible move', () => {
+  const env = load(POST);
+  env.advance(120000); // read the post for two minutes
+  const before = env.urlMoves.length;
+  env.history.replaceState({ h: 1 }, '', 'https://x.com/someone');
+  env.advance(250);
+  env.history.replaceState({ h: 2 }, '', POST);
+  env.advance(250);
+  env.history.replaceState({ h: 3 }, '', 'https://x.com/someone');
+  env.advance(250);
+  env.history.replaceState({ h: 4 }, '', POST);
+  env.advance(5000);
+  const moves = env.urlMoves.slice(before);
+  return {
+    ok: moves.length <= 1 && env.location.href === POST,
+    detail: `${moves.length} move(s): ${moves.map((m) => m.url).join(' → ') || '(none)'}`,
+  };
+});
+
+// 14. The same burst, in the tab title.
+scenario('title churn on a long-idle page → at most 1 visible write', () => {
+  const env = load(POST);
+  env.setTitle('demi on X: "art on hyperliquid" / X');
+  env.advance(120000);
+  const before = env.nativeTitleWrites.length;
+  env.setTitle('X');
+  env.advance(250);
+  env.setTitle('demi on X: "art on hyperliquid" / X');
+  env.advance(250);
+  env.setTitle('X');
+  env.advance(250);
+  env.setTitle('demi on X: "art on hyperliquid" / X');
+  env.advance(5000);
+  const writes = env.nativeTitleWrites.slice(before);
+  return {
+    ok: writes.length <= 1 && env.document.title === 'demi on X: "art on hyperliquid" / X',
+    detail: `${writes.length} write(s), final "${env.document.title}"`,
+  };
+});
+
+// 15. The detector must not turn an idle page into a held one. Two changes
+//     spaced further apart than the churn threshold are two navigations, not a
+//     burst, and both have to land promptly.
+scenario('idle page → two well-spaced changes both land promptly', () => {
+  const env = load(POST);
+  env.advance(30000);
+  env.history.replaceState({ n: 1 }, '', 'https://x.com/explore');
+  env.advance(400);
+  const first = env.location.href === 'https://x.com/explore';
+  env.advance(3000);
+  const t0 = env.at();
+  env.history.replaceState({ n: 2 }, '', 'https://x.com/messages');
+  env.advance(400);
+  return {
+    ok: first && env.location.href === 'https://x.com/messages',
+    detail: first
+      ? `second landed ${(env.urlMoves.at(-1)?.at ?? NaN) - t0}ms after the call`
+      : 'first change did not land',
   };
 });
 
