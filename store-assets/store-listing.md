@@ -60,6 +60,10 @@ scripts during page load, so the URL bar stays on the page being viewed.
   are the source of the URL bar flicker. No page content is read, stored,
   or transmitted.
 - Remote code: none. All code is packaged in the extension.
+- Debug buffer: the script keeps its last ~400 decisions (the URLs and titles
+  the page itself set) in a plain in-memory array on the tab, so intermittent
+  flicker can be inspected after the fact. It is discarded when the tab
+  closes, is never persisted, and is never sent anywhere.
 
 **Data usage disclosures:** check "Does NOT collect user data" for every
 category. No data is collected, sold, or transferred. (With no data
@@ -75,7 +79,7 @@ public repo and linking it never hurts.)
 
 ## Upload
 
-- ZIP: dist/url-flicker-tamer-1.2.0.zip (contains manifest.json, tamer.js,
+- ZIP: dist/url-flicker-tamer-1.3.0.zip (contains manifest.json, tamer.js,
   icons/ — store assets and docs are excluded on purpose)
 - Console: https://chrome.google.com/webstore/devconsole
   One-time $5 developer registration fee on first use.
